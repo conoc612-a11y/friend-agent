@@ -93,6 +93,7 @@ body.has-banner .app{height:calc(100dvh - 32px)}
 .box textarea{flex:1;border:0;outline:0;resize:none;max-height:140px;padding:6px 0;background:transparent}
 .send{border:0;background:var(--accent);color:#fff;width:40px;height:40px;border-radius:12px;font-size:18px;font-weight:700;flex:none}
 .send:disabled{background:var(--line-2)}
+.deploy-sha{position:fixed;right:14px;bottom:10px;font-size:11px;color:var(--ink-2);background:rgba(255,255,255,.85);border:1px solid var(--line);border-radius:999px;padding:3px 10px;z-index:9;pointer-events:none}
 .photo{border:0;background:var(--surface-2);width:40px;height:40px;border-radius:12px;font-size:18px;flex:none;margin-left:-8px}
 .photo:hover{background:var(--accent-soft)}
 
@@ -291,6 +292,8 @@ textarea.input{min-height:80px;resize:vertical}
     <div class="panel-body" id="panelBody"><div class="panel-empty">메시지를 보내면 캐릭터가 고른 도구, 도구 결과, 답에 쓴 기억, 새로 기억한 것이 여기에 표시됩니다.</div></div>
   </aside>
 </div>
+
+<footer class="deploy-sha" id="deploySha" hidden></footer>
 
 <script type="module">
 const $ = (s, el = document) => el.querySelector(s);
@@ -658,6 +661,10 @@ $("#deleteAll").onclick = async () => {
 };
 
 // ── 시작 ─────────────────────────────────────────────────────
+// 현재 배포된 커밋을 화면 아래에 표시한다(로컬 실행이면 숨김)
+fetch("/version").then(r => r.json()).then(v => {
+  if (v.commit && v.commit !== "local") { const el = $("#deploySha"); el.hidden = false; el.textContent = "배포 " + String(v.commit).slice(0, 7); el.title = v.commit; }
+}).catch(() => {});
 (async () => {
   cfg = await (await fetch("/api/config")).json();
   options = cfg.options;
