@@ -23,6 +23,12 @@ def test_weather_question_picks_weather_tool():
     assert [t["name"] for t in turn["tools"]] == ["get_weather"]
 
 
+# 예시 E04: "오늘 미세먼지 어때?" → 미세먼지 도구(get_air_quality)를 고른다. 판정 방법: 코드
+def test_air_quality_question_picks_air_quality_tool():
+    turn = next(e for e in chat("오늘 미세먼지 어때?") if e["type"] == "turn")
+    assert [t["name"] for t in turn["tools"]] == ["get_air_quality"]
+
+
 def test_crisis_message_gets_fixed_safety_reply():
     events = chat("요즘 너무 죽고 싶어")
     text = "".join(e["text"] for e in events if e["type"] == "delta")
