@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>손으로 한 번, 워크플로로 한 번 — Cloud Run 블루그린 배포 정리</title>
+<meta name="description" content="Cloud Run 리비전과 트래픽으로 블루그린·카나리 배포를 손으로 해 보고, GitHub Actions 워크플로로 옮긴 기록.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  :root{
+    --ink:#14171a;
+    --muted:#5c656e;
+    --faint:#8b949e;
+    --line:#e4e1d9;
+    --bg:#fbfaf7;
+    --paper:#ffffff;
+    --blue:#1f5fbf;
+    --green:#167a53;
+    --code-bg:#12161a;
+    --code-ink:#e6edf3;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,system-ui,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    font-size:17px;
+    line-height:1.78;
+    letter-spacing:-0.01em;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:780px;margin:0 auto;padding:0 24px}
+  a{color:var(--blue);text-decoration:none;border-bottom:1px solid rgba(31,95,191,.25)}
+  a:hover{border-bottom-color:var(--blue)}
+
+  /* ── header ── */
+  header{padding:72px 0 40px;border-bottom:1px solid var(--line)}
+  .kicker{
+    display:inline-flex;align-items:center;gap:8px;
+    font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:22px;
+  }
+  .kicker::before{
+    content:"";width:28px;height:3px;border-radius:2px;
+    background:linear-gradient(90deg,var(--blue),var(--green));
+  }
+  h1{
+    font-size:clamp(30px,5.2vw,44px);
+    line-height:1.28;letter-spacing:-0.035em;
+    margin:0 0 22px;font-weight:800;
+  }
+  .deck{
+    font-size:19px;line-height:1.7;color:var(--muted);
+    margin:0 0 30px;padding-left:18px;
+    border-left:3px solid var(--line);
+  }
+  .meta{
+    display:flex;flex-wrap:wrap;gap:10px 18px;
+    font-size:14px;color:var(--faint);font-variant-numeric:tabular-nums;
+  }
+  .meta span{display:inline-flex;align-items:center;gap:6px}
+
+  /* ── toc ── */
+  .toc{
+    margin:34px 0 0;padding:22px 24px;
+    background:var(--paper);border:1px solid var(--line);border-radius:14px;
+  }
+  .toc p{margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--faint);text-transform:uppercase}
+  .toc ol{margin:0;padding-left:20px;font-size:15px;line-height:1.9;color:var(--muted)}
+  .toc a{color:var(--ink);border-bottom:0}
+  .toc a:hover{color:var(--blue)}
+
+  /* ── article ── */
+  article{padding:52px 0 0}
+  h2{
+    font-size:clamp(22px,3.4vw,27px);
+    line-height:1.4;letter-spacing:-0.03em;
+    margin:64px 0 20px;font-weight:800;scroll-margin-top:24px;
+  }
+  h2:first-of-type{margin-top:0}
+  h2 .num{
+    display:inline-block;min-width:1.55em;
+    font-size:.78em;font-weight:800;
+    color:var(--green);
+    font-variant-numeric:tabular-nums;
+  }
+  h3{font-size:18px;margin:38px 0 12px;font-weight:700;letter-spacing:-0.02em}
+  p{margin:0 0 20px}
+  strong{font-weight:700}
+  ul,ol{margin:0 0 20px;padding-left:22px}
+  li{margin:0 0 8px}
+  li::marker{color:var(--faint)}
+
+  hr{border:0;border-top:1px solid var(--line);margin:56px 0}
+
+  /* ── callout ── */
+  .note{
+    margin:26px 0;padding:18px 22px;
+    background:linear-gradient(180deg,rgba(31,95,191,.05),rgba(22,122,83,.05));
+    border-left:3px solid var(--blue);border-radius:0 12px 12px 0;
+    font-size:16px;color:var(--ink);
+  }
+  .note p:last-child{margin-bottom:0}
+
+  /* ── table ── */
+  .table-wrap{overflow-x:auto;margin:26px 0;border:1px solid var(--line);border-radius:14px;background:var(--paper)}
+  table{width:100%;border-collapse:collapse;font-size:15px;line-height:1.6}
+  th,td{padding:13px 16px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+  th{
+    font-size:13px;font-weight:700;letter-spacing:.02em;color:var(--muted);
+    background:#f6f4ee;white-space:nowrap;
+  }
+  tbody tr:last-child td{border-bottom:0}
+  td:first-child{font-weight:600}
+  td code{white-space:nowrap}
+
+  /* ── code ── */
+  code{
+    font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    font-size:.88em;background:rgba(20,23,26,.06);
+    padding:2px 6px;border-radius:5px;
+  }
+  pre{
+    margin:24px 0;padding:18px 20px;overflow-x:auto;
+    background:var(--code-bg);color:var(--code-ink);
+    border-radius:14px;font-size:14px;line-height:1.7;
+  }
+  pre code{background:none;padding:0;font-size:inherit;color:inherit}
+
+  /* ── mermaid ── */
+  .diagram{
+    margin:30px 0;padding:26px 18px;
+    background:var(--paper);border:1px solid var(--line);border-radius:14px;
+  }
+  .diagram .mermaid{display:flex;justify-content:center}
+  .diagram figcaption{
+    margin-top:16px;padding-top:14px;border-top:1px dashed var(--line);
+    font-size:13.5px;color:var(--faint);text-align:center;
+  }
+
+  /* ── checklist ── */
+  .checks{list-style:none;padding:0;margin:24px 0}
+  .checks li{
+    position:relative;padding-left:30px;margin-bottom:12px;font-size:16px;
+  }
+  .checks li::before{
+    content:"";position:absolute;left:0;top:.55em;
+    width:14px;height:8px;border-left:2.5px solid var(--green);border-bottom:2.5px solid var(--green);
+    transform:rotate(-45deg);
+  }
+  .checks li.no::before{
+    border-color:#c2453d;
+    width:12px;height:2px;border-left:0;border-bottom:2.5px solid #c2453d;transform:none;top:.95em;
+  }
+
+  footer{
+    margin-top:72px;padding:34px 0 64px;border-top:1px solid var(--line);
+    font-size:14px;color:var(--faint);
+  }
+  footer a{color:var(--muted)}
+
+  @media (max-width:600px){
+    body{font-size:16px}
+    header{padding:48px 0 32px}
+    .wrap{padding:0 18px}
+    .deck{font-size:17px}
+    th,td{padding:11px 13px}
+    .toc{padding:18px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">Mini WRAP UP · 1030</div>
+  <h1>손으로 한 번, 워크플로로 한 번<br>— Cloud Run 블루그린 배포 정리</h1>
+  <p class="deck">배포 중 실패 5건이 찍힌 로그를 보며, 그게 내 배포 탓인지 내 와이파이 탓인지 구분하지 못했던 10분이 오늘 제일 오래 붙잡고 있던 순간이었다.</p>
+  <div class="meta">
+    <span>2026. 10. 30.</span>
+    <span>읽는 시간 약 9분</span>
+    <span>Cloud Run · GitHub Actions</span>
+  </div>
+
+  <nav class="toc">
+    <p>목차</p>
+    <ol>
+      <li><a href="#terms">먼저 용어부터</a></li>
+      <li><a href="#bluegreen">손으로 해 본 블루그린</a></li>
+      <li><a href="#pinning">트래픽 고정 — 조용한 함정</a></li>
+      <li><a href="#workflow">손 작업을 워크플로로</a></li>
+      <li><a href="#mistakes">오늘 한 실수 두 개</a></li>
+      <li><a href="#divide">Cloud Run이 하는 것과 내가 정하는 것</a></li>
+      <li><a href="#closing">마치며</a></li>
+    </ol>
+  </nav>
+</header>
+
+<article>
+
+<p>오늘 수업은 배포였다. 정확히는 <strong>“배포했는데 사용자는 아무 일도 없어야 한다”</strong>를 만드는 법.</p>
+
+<p>처음엔 이게 무슨 말인지 잘 와닿지 않았다. 배포는 새 버전을 내보내는 일이고, 새 버전이 나가면 당연히 잠깐은 뭔가 흔들리는 거 아닌가. 그런데 Cloud Run에는 <strong>리비전(revision)</strong>과 <strong>트래픽 비율</strong>이라는 게 있어서, 새 버전을 올려 놓고도 당장은 0%만 보내 놓을 수 있다. 확인이 끝나면 그때 100%로 돌리면 된다. 사용자는 그 사이에 이전 버전을 계속 쓴다.</p>
+
+<p>이 글은 오늘 한 걸 정리한 것이다. 순서는 이렇다.</p>
+<ol>
+  <li>손으로 블루그린·카나리·롤백을 해 보고</li>
+  <li>같은 절차를 GitHub Actions 워크플로로 옮기고</li>
+  <li>스모크 테스트가 실패하면 전환이 막히는지 일부러 망가뜨려서 확인한다</li>
+</ol>
+
+<div class="note">
+  <p>대상은 <strong>staging(<code>friend-agent-staging</code>)만</strong>이다. production은 처음부터 Supabase도 로그인도 붙이지 않은 상태로 두고 손대지 않았다. 배포 실습을 하겠다고 운영 중인 서비스의 설정을 바꾸면, 실습이 아니라 사고 연습이 된다.</p>
+</div>
+
+<h2 id="terms"><span class="num">01</span>먼저 용어부터</h2>
+
+<p>오늘 나온 말들은 대부분 “트래픽을 어디로 보낼 것인가”로 수렴한다.</p>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>용어</th><th>한 줄 설명</th><th>오늘 내가 쓴 자리</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>리비전</td><td>서비스 설정과 이미지를 통째로 찍어 둔 불변 스냅샷. 배포할 때마다 새 이름(<code>00023-siq</code> 같은)이 붙는다</td><td>전환 대상, 롤백 대상</td></tr>
+    <tr><td>태그</td><td>특정 리비전에만 닿는 별도 주소(<code>green---…run.app</code>). 트래픽 비율과 무관하게 그 리비전으로 요청이 간다</td><td>0% 상태의 새 리비전을 미리 확인할 때</td></tr>
+    <tr><td>블루그린</td><td>새 버전(그린)을 0%로 띄워 검증한 뒤, 한 번에 100%로 갈아끼우는 방식</td><td>손 실습 1·2회차, 워크플로</td></tr>
+    <tr><td>카나리</td><td>새 버전에 10% → 50% → 100%처럼 비율을 나눠 천천히 보내는 방식</td><td>손 실습에서 지표와 함께</td></tr>
+    <tr><td>트래픽 고정</td><td>트래픽을 “최신 리비전”이 아니라 “이 리비전”에 묶는 것. 이후 배포가 트래픽을 못 받는다</td><td>오늘 제일 조용히 나를 문 개념</td></tr>
+    <tr><td>스모크 테스트</td><td>배포 직후 핵심 경로만 빠르게 두드려 보는 검사</td><td><code>/health</code>, <code>/version</code></td></tr>
+    <tr><td>스타트업 프로브</td><td>“이 리비전이 준비됐다”를 판정하는 기준. 기본값은 TCP 포트 확인</td><td>오늘은 TCP 8080, 교안은 <code>/health</code></td></tr>
+    <tr><td>원클릭 롤백</td><td>버튼 하나로 이전 리비전에 100%를 되돌리는 것</td><td>스테이지 5, <code>rollback.yml</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>여기서 중요한 건 <strong>태그와 트래픽이 별개</strong>라는 점이다. 태그가 붙어 있어도 그 리비전은 0%일 수 있고, 트래픽이 100%인 리비전에 태그가 없을 수도 있다. 이걸 하나로 착각하면 뒤에서 한 번 크게 다친다. 오늘 실제로 다쳤다.</p>
+
+<h2 id="bluegreen"><span class="num">02</span>손으로 해 본 블루그린</h2>
+
+<figure class="diagram">
+  <pre class="mermaid">
+sequenceDiagram
+    participant U as 사용자
+    participant P as 이전 리비전 100%
+    participant G as 새 리비전 0%
+    participant T as green 태그 URL
+
+    U->>P: 계속 이전 버전 사용
+    Note over G: 배포 — BANNER만 바꾼 리비전을 0%로 올림
+    Note over G: tag green 부착
+    T->>G: /version, /health 로 사전 확인
+    G-->>T: 새 커밋 응답
+    Note over U: 요청 확인 스크립트 켜 둔 상태
+    U->>G: 전환 — 트래픽 100%
+    Note over P: 이전 리비전은 남겨 둠 (롤백용)
+  </pre>
+  <figcaption>블루그린 전환 순서. 사용자는 파란 쪽에 붙어 있고, 초록 쪽은 태그로만 확인한다.</figcaption>
+</figure>
+
+<p>손으로 한 절차는 다섯 단계였다.</p>
+<ol>
+  <li>지금 요청을 받는 리비전 이름을 확인한다</li>
+  <li><code>BANNER</code> 환경변수만 바꾼 새 리비전을 <strong>0%</strong>로 올리고 <code>green</code> 태그를 붙인다</li>
+  <li>태그 URL의 <code>/version</code>으로 “새 리비전이 맞는지”, 원래 주소로 “이전 리비전이 계속 답하는지” 확인한다</li>
+  <li>요청 확인 스크립트를 켜 둔 채로 100% 전환한다</li>
+  <li><code>--to-latest</code>로 되돌리고 태그·BANNER를 지운다</li>
+</ol>
+
+<h3>두 번 해 보고 남은 숫자</h3>
+
+<p>같은 절차를 두 번 반복했다. 두 번째에 숫자가 더 좋아진 것도 있지만, 반대로 <strong>한 번은 실패가 났다.</strong></p>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>회차</th><th>0% 리비전</th><th>전환+롤백 요청</th><th>실패</th><th>카나리(10→50→100)</th><th>카나리 실패</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1회차</td><td><code>00023-siq</code> + green</td><td>230건</td><td>0</td><td>433건</td><td>0</td></tr>
+    <tr><td>2회차</td><td><code>00035-qos</code> + green</td><td>277건</td><td><strong>5</strong></td><td>483건</td><td>0</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>1회차는 깔끔했다. 2회차는 롤백 직후에만 실패가 5건 몰렸다. 여기서 오늘의 삽질이 시작된다.</p>
+
+<h3>실패 5건의 진짜 원인</h3>
+
+<p>처음 의심한 건 새 리비전이었다. 롤백했으니 새 버전 문제겠지, 싶었다. 하지만 실패한 시각이 <strong>롤백한 직후 15:28:12~21에만</strong> 몰려 있었고, 그 50초 동안 이전 리비전(<code>00017</code>)은 트래픽이 0%라 인스턴스가 내려가 있었다.</p>
+
+<p>즉, 원인은 배포가 아니라 <strong>콜드 스타트</strong>였다. 측정 스크립트(<code>scripts/watch_requests.py</code>)는 타임아웃이 2초인데, 50초 동안 아무 요청도 안 받던 인스턴스가 첫 요청을 받으면 2초를 넘길 수 있다. 바로 뒤에 <code>curl</code>로 때려 보니 0.28초에 정상 응답이 왔다.</p>
+
+<p>여기서 배운 건 두 가지다.</p>
+<ul>
+  <li><strong>실패 0건은 “배포가 잘 됐다”가 아니라 “측정 조건까지 통과했다”</strong>는 뜻이다. 측정 도구의 타임아웃이 2초면, 2초 넘는 콜드 스타트는 배포 잘못으로 보인다.</li>
+  <li>그래서 판정은 <strong>실패 시각과 이벤트 시각을 맞춰 보는 것</strong>으로 한다. 실패가 전환 시각 근처에만 몰리면 배포 문제, 전체에 흩어져 있으면 내 네트워크 문제다.</li>
+</ul>
+
+<h3>카나리는 숫자가 더 필요하다</h3>
+
+<p>카나리는 10% → 50% → 100%로 올리면서 각 단계에서 잠깐 기다리는 방식이다. 블루그린보다 안전해 보이지만, <strong>요청 수가 적으면 10%의 숫자는 의미가 없다.</strong> 100건 중 10건이면 실패 1건만으로 오류율 10%가 되고, 그 1건이 우연일 수도 있다.</p>
+
+<p>그래서 카나리 기준 문서(<code>docs/canary-criteria.md</code>)에 “머무는 시간”과 “다음 단계로 가는 조건 / 되돌리는 조건”을 미리 적어 두는 칸을 만들었다. 오늘은 손으로 하면서 실패 0건만 확인했고, <strong>자동 판정은 만들지 않았다.</strong> 이건 남은 숙제다.</p>
+
+<h2 id="pinning"><span class="num">03</span>트래픽 고정 — 오늘 제일 조용한 함정</h2>
+
+<p>전환할 때 이렇게 하면 편하다.</p>
+
+<pre><code>gcloud run services update-traffic friend-agent-staging --to-tags green=100</code></pre>
+
+<p>“<code>green</code> 태그가 붙은 리비전으로 100% 보내라”는 뜻이다. 짧고 명확해 보인다. 그런데 이렇게 하면 <strong>트래픽이 리비전이 아니라 태그에 묶인다.</strong></p>
+
+<p>다음 배포를 생각해 보자.</p>
+<ol>
+  <li>새 리비전을 만들고 <code>tag: green</code>을 붙인다 → 태그는 새 리비전으로 <strong>이동</strong>한다 (Cloud Run에서 태그 이름은 서비스 내 유일)</li>
+  <li>그런데 트래픽은 “green 태그”를 따라가고 있었으므로 → <strong>스모크 테스트를 하기도 전에 100%가 새 리비전으로 넘어간다</strong></li>
+</ol>
+
+<p>0% 배포의 의미가 통째로 사라진다. 그래서 전환은 반드시 <strong>리비전 이름</strong>으로 한다.</p>
+
+<pre><code>rev=$(gcloud run services describe friend-agent-staging \
+  --format="value(status.latestCreatedRevisionName)")
+gcloud run services update-traffic friend-agent-staging --to-revisions "$rev=100"</code></pre>
+
+<p>직접 확인한 흔적도 있다. 1회차 정리 후 <code>00016-vvb</code>가 <strong>0%인데도 트래픽 목록에 남아 있었고</strong>, 2회차에서는 <code>00019-4vj</code>가 0%로 남아 있었다. 트래픽이 특정 리비전에 고정되면 그 리비전은 0%여도 목록에서 안 사라진다. 이걸 모르면 “왜 새 배포가 트래픽을 못 받지?”에서 한참 헤맨다.</p>
+
+<h2 id="workflow"><span class="num">04</span>손 작업을 워크플로로 옮기기</h2>
+
+<p>자동화는 손으로 하던 절차를 옮겨 적는 일이다. 옮길 원본이 없으면 워크플로도 못 만든다. 그래서 손 실습을 먼저 한 번, 두 번 했다.</p>
+
+<p>옮길 때 걸린 지점은 대부분 “콘솔에서는 눈으로 보던 정보를 명령으로 어떻게 얻는가”였다.</p>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>손으로 하던 일</th><th>워크플로에서</th><th>어디서 얻나</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>콘솔에서 지금 트래픽 받는 리비전 확인</td><td>전환 전 로그로 남김</td><td><code>status.traffic[].revisionName</code> (percent &gt; 0)</td></tr>
+    <tr><td>새 리비전 0% + 태그</td><td><code>tag: green</code>, <code>no_traffic: true</code></td><td>deploy-cloudrun 액션 입력</td></tr>
+    <tr><td>태그 URL 찾기</td><td><code>gcloud describe</code> + <code>jq</code></td><td>액션 출력에는 서비스 URL만 있다</td></tr>
+    <tr><td>태그 URL에서 화면·<code>/version</code> 확인</td><td>스모크 테스트 단계</td><td><code>/version</code>의 commit == <code>github.sha</code></td></tr>
+    <tr><td>100% 전환</td><td><code>update-traffic --to-revisions</code></td><td><code>status.latestCreatedRevisionName</code></td></tr>
+    <tr><td>콘솔에서 이전 리비전 고르기</td><td>롤백 워크플로 버튼</td><td>입력 또는 최신순 두 번째 리비전</td></tr>
+  </tbody>
+</table>
+</div>
+
+<figure class="diagram">
+  <pre class="mermaid">
+flowchart LR
+    A[main 머지] --> B["빌드 후 0% 배포 tag green"]
+    B --> C[태그 URL 조회]
+    C --> D{스모크 테스트 통과}
+    D -- 실패 --> E["워크플로 실패, 전환 안 함"]
+    D -- 통과 --> F["전환 (리비전 이름으로 100%)"]
+    F --> G[version 확인]
+    E -.->|사용자 영향 없음| H[이전 리비전 계속 100%]
+  </pre>
+  <figcaption>머지 한 번으로 0% 배포 → 스모크 테스트 → 전환까지. 실패하면 전환 단계는 아예 실행되지 않는다.</figcaption>
+</figure>
+
+<p><code>deploy.yml</code>의 단계는 이렇게 됐다.</p>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>단계</th><th>하는 일</th><th>실패하면</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>checkout / auth</td><td>코드 받기, WIF로 GCP 인증 (키 파일 없음)</td><td>즉시 중단</td></tr>
+    <tr><td>deploy-cloudrun</td><td>소스 빌드 + <code>COMMIT_SHA</code> 주입 + <strong>0%</strong> + green 태그</td><td>새 리비전 안 생김</td></tr>
+    <tr><td>태그 URL 확인</td><td><code>tag=green</code> 항목의 url을 꺼내 output으로</td><td>URL이 비면 다음 단계 실패</td></tr>
+    <tr><td>스모크 테스트</td><td>10초 간격 최대 12회, <code>/version</code> 커밋 일치 + <code>/health</code> 200</td><td><strong>전환 단계 실행 안 됨</strong></td></tr>
+    <tr><td>전환</td><td><code>latestCreatedRevisionName</code>으로 100%, 이전 리비전 로그</td><td>트래픽 그대로</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>스모크 테스트를 <strong>태그 URL</strong>로 하는 게 핵심이다. 서비스 주소로 물으면 아직 이전 리비전이 답한다. 재시도를 12회 둔 이유도 있다. 새 리비전의 첫 요청은 콜드 스타트로 늦거나 502가 날 수 있다. 오늘 5건 실패로 배운 걸 그대로 넣었다.</p>
+
+<p>롤백은 워크플로를 따로 만들었다. Actions 탭에서 Run workflow를 누르면 끝이다. <code>revision</code>을 비우면 최신순 두 번째 리비전으로 간다. 빌드도 새 인스턴스도 없이 트래픽 설정만 바꾸니 몇 초 걸린다.</p>
+
+<h2 id="mistakes"><span class="num">05</span>오늘 한 실수 두 개</h2>
+
+<p>정리라고 하면 잘된 것만 쓰기 쉬운데, 오늘 실제로 물린 건 이 두 개다.</p>
+
+<h3>실수 1 — production을 향해 워크플로를 만들었다</h3>
+
+<p>수업 요구는 staging만이었는데, 이 저장소의 <code>deploy.yml</code>이 <code>service: friend-agent</code>(production)이길래 그대로 0% 배포·스모크·전환을 붙였다. 문제는 <strong>staging과 production이 같은 파일을 쓴다</strong>는 점이었다. 그대로 머지했다면 운영 서비스에 매번 0% 리비전이 쌓이고, 첫 실행에서 트래픽이 “최신 리비전”에서 특정 리비전으로 고정됐을 것이다.</p>
+
+<p>고치는 데 커밋 4개를 다시 쌓아야 했다. 브랜치 스택이라 앞 커밋을 고치면 뒤가 전부 따라온다. 지금은 워크플로 안에 <code>friend-agent</code>만 가리키는 줄이 하나도 없다.</p>
+
+<h3>실수 2 — 태그로 전환하려고 했다</h3>
+
+<p>위에서 쓴 그 함정이다. <code>--to-tags green=100</code>이 짧아서 끌렸는데, 다음 배포에서 태그가 이동하면 0% 배포가 무효가 된다. “왜 굳이 리비전 이름을 쓰지?” 싶었던 이유를 직접 겪고 나서야 알았다.</p>
+
+<p>두 실수의 공통점은 <strong>“지금 눈에 보이는 상태”만 보고 결정한 것</strong>이다. 실수 1은 지금 파일이 어느 서비스를 향하는지만 봤고, 실수 2는 이번 전환만 생각하고 다음 배포를 안 봤다.</p>
+
+<h2 id="divide"><span class="num">06</span>Cloud Run이 하는 것과 내가 정하는 것</h2>
+
+<p>오늘 제일 오래 남을 표다.</p>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Cloud Run이 하는 것</th><th>내가 정하는 것</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>로드밸런서 운영, 리비전 간 트래픽 분배</td><td>몇 %를 어느 리비전으로 보낼지</td></tr>
+    <tr><td>이전 인스턴스에 종료 신호를 보내고 정리</td><td>언제 전환할지 (스모크 테스트 통과 후)</td></tr>
+    <tr><td>리비전을 불변으로 보관</td><td>어떤 리비전을 남기고 지울지</td></tr>
+    <tr><td>요청을 받을 인스턴스를 늘리고 줄임</td><td>최소/최대 인스턴스 수</td></tr>
+    <tr><td>기본 준비 판정 (TCP 포트 확인)</td><td><strong>준비됐다고 볼 기준</strong> (스타트업 프로브)</td></tr>
+    <tr><td>—</td><td>실패했을 때 롤백할지, 어디로 돌아갈지</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>마지막 두 줄이 오늘의 결론이다. Cloud Run은 “트래픽을 옮기는 일”을 책임지지만, <strong>“이 버전이 멀쩡한가”</strong>와 <strong>“문제가 생기면 어디로 돌아갈 것인가”</strong>는 대신 판단해 주지 않는다. 그래서 스모크 테스트와 롤백 버튼을 내가 만든다.</p>
+
+<p>참고로 staging의 스타트업 프로브는 아직 <strong>TCP 8080</strong>이다. 그래서 <code>/health</code>를 503으로 망가뜨린 버전을 배포하면, Cloud Run은 “포트는 열렸네” 하고 준비 완료로 보고, <strong>스모크 테스트 단계에서</strong> 멈춘다. 만약 프로브가 <code>/health</code>였다면 배포 단계에서 먼저 멈췄을 것이다. 어느 쪽이든 전환은 안 되지만, <strong>어디서 멈추는지는 내가 정한 설정이 결정한다.</strong></p>
+
+<h2 id="closing"><span class="num">07</span>마치며</h2>
+
+<p>오늘 한 걸 한 문장으로 줄이면 이렇다.</p>
+
+<div class="note">
+  <p>무중단 배포는 “잘 배포하는 기술”이 아니라, <strong>새 버전을 사용자에게 보내기 전에 혼자 확인할 수 있는 상태를 만들어 두는 일</strong>이다.</p>
+</div>
+
+<p>0% 리비전과 태그 URL이 있어서 새 버전을 사용자 없이 먼저 볼 수 있었고, 스모크 테스트가 있어서 “봤다”를 자동 판정으로 바꿨고, 리비전 이름으로 전환해서 그 판정이 다음 배포에도 유지됐다.</p>
+
+<h3>남은 것 (일부러 안 한 것)</h3>
+<ul>
+  <li><strong>카나리 자동 승격</strong> — 10%에서 몇 분 기다린 뒤 오류율·지연을 보고 자동으로 50%, 100%로 올리는 것. 오늘은 손으로만 했다. 기준을 숫자로 정해야 해서 함부로 만들면 오히려 위험하다.</li>
+  <li><strong>production 승인 게이트</strong> — 지금 <code>deploy.yml</code>에는 <code>environment:</code>가 없어서 main 머지 즉시 실행된다. staging만 쓰는 동안은 문제 없지만, production으로 넓힐 때는 반드시 필요하다.</li>
+  <li><strong>롤백 기본값의 한계</strong> — “최신순 두 번째 리비전”은 실패한 0% 리비전이 최신이면 엉뚱한 걸 고른다. 그때는 이름을 직접 넣어야 한다. 코드에 <code>shortcut:</code> 주석으로 남겨 뒀다.</li>
+  <li><strong>스키마 변경</strong> — 두 리비전이 같은 Supabase 테이블을 함께 쓴다. <code>reminders</code>의 열 이름을 바꾸는 배포라면, 전환 중 새 코드와 옛 코드가 서로의 데이터를 못 보고, 롤백하면 옛 코드가 바뀐 구조를 읽는다. 열 이름 변경은 <strong>새 열 추가 → 읽기 전환 → 옛 열 삭제</strong>로 나눠야 각 단계가 롤백 가능하다.</li>
+</ul>
+
+<h3>오늘의 자가 점검</h3>
+<ul class="checks">
+  <li>워크플로에 시크릿 없음 — <code>vars.*</code>(비밀 아님)만 쓰고, 키 파일을 만들지 않았다</li>
+  <li>PR만 열면 배포 없음 — 트리거가 main push뿐</li>
+  <li>스모크 실패 시 전환 안 됨 — 실패하면 다음 단계가 없다</li>
+  <li>두 번 연속 배포해도 0% → 전환 — 리비전 이름으로 전환</li>
+  <li class="no">배포 중 실패 0건 — 1회차 통과, 2회차는 롤백 직후 5건(콜드 스타트, 원인 분리 완료)</li>
+  <li>버튼 하나 롤백 — <code>rollback.yml</code> Run workflow</li>
+  <li>액션 버전 그대로 — <code>checkout@v7</code>, <code>auth@v3</code>, <code>deploy-cloudrun@v3</code></li>
+</ul>
+
+</article>
+
+<footer>
+  <p>2026년 10월 30일 · Mini WRAP UP 과제 · staging(<code>friend-agent-staging</code>)에서만 실습했고 production은 건드리지 않았습니다.</p>
+</footer>
+
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    fontFamily: 'Pretendard, -apple-system, system-ui, sans-serif',
+    themeVariables: {
+      primaryColor: '#eef4ff',
+      primaryTextColor: '#14171a',
+      primaryBorderColor: '#1f5fbf',
+      secondaryColor: '#e9f7ef',
+      tertiaryColor: '#ffffff',
+      lineColor: '#7b8794',
+      fontSize: '14px'
+    },
+    flowchart: { curve: 'basis', useMaxWidth: true },
+    sequence: { useMaxWidth: true, wrap: true }
+  });
+</script>
+</body>
+</html>
