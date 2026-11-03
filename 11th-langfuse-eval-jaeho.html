@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>11강 · Langfuse로 에이전트 품질 지키기 — 오재호 실습 기록</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --bg-elevated: #1e293b;
+      --fg: #f1f5f9;
+      --fg-muted: #94a3b8;
+      --accent: #22d3ee;
+      --accent-soft: rgba(34, 211, 238, 0.15);
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --card: #1e293b;
+      --border: #334155;
+    }
+    [data-theme="light"] {
+      --bg: #f8fafc;
+      --bg-elevated: #ffffff;
+      --fg: #0f172a;
+      --fg-muted: #64748b;
+      --accent: #0891b2;
+      --accent-soft: rgba(8, 145, 178, 0.12);
+      --success: #16a34a;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --card: #ffffff;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.7;
+      transition: background 0.3s, color 0.3s;
+    }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    .scroll-fade { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease-out, transform 0.6s ease-out; }
+    .scroll-fade.visible { opacity: 1; transform: translateY(0); }
+    .stagger-1 { transition-delay: 0.1s; }
+    .stagger-2 { transition-delay: 0.2s; }
+    .stagger-3 { transition-delay: 0.3s; }
+    .stagger-4 { transition-delay: 0.4s; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+    .btn { padding: 0.5rem 1rem; border-radius: 8px; font-weight: 500; transition: all 0.2s; cursor: pointer; border: none; }
+    .btn-primary { background: var(--accent); color: var(--bg); }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .btn-ghost { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--accent-soft); border-color: var(--accent); }
+    .badge { padding: 0.25rem 0.6rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+    .badge-success { background: rgba(34, 197, 94, 0.2); color: var(--success); border: 1px solid var(--success); }
+    .badge-warning { background: rgba(245, 158, 11, 0.2); color: var(--warning); border: 1px solid var(--warning); }
+    .badge-danger { background: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+    .badge-info { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { font-weight: 600; color: var(--fg-muted); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    tr:hover td { background: var(--accent-soft); }
+    .code-block { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.6; }
+    .code-block code { color: #e6edf3; }
+    .token-keyword { color: #ff7b72; }
+    .token-string { color: #a5d6ff; }
+    .token-comment { color: #8b949e; }
+    .token-function { color: #d2a8ff; }
+    .progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 4px; transition: width 0.8s ease-out; }
+    .chart-container { position: relative; height: 300px; }
+    @media (max-width: 768px) { .chart-container { height: 250px; } }
+    ::selection { background: var(--accent-soft); color: var(--fg); }
+    .tooltip { position: absolute; background: var(--bg-elevated); border: 1px solid var(--border); padding: 0.75rem; border-radius: 8px; font-size: 0.875rem; pointer-events: none; z-index: 100; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+  </style>
+</head>
+<body class="min-h-screen">
+  <!-- Theme Toggle -->
+  <button id="themeToggle" class="fixed top-4 right-4 z-50 btn-ghost p-2" aria-label="테마 전환">
+    <svg id="sunIcon" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+    <svg id="moonIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+  </button>
+
+  <!-- Progress Indicator -->
+  <div class="fixed top-0 left-0 right-0 h-1 bg-transparent z-40" style="background: linear-gradient(90deg, var(--accent), var(--success));">
+    <div id="progressFill" class="progress-fill" style="width: 0%; background: linear-gradient(90deg, var(--accent), var(--success));"></div>
+  </div>
+
+  <main class="pt-20 pb-20 px-4 md:px-8 max-w-5xl mx-auto">
+    <!-- Header -->
+    <header class="scroll-fade mb-16 text-center">
+      <div class="inline-flex items-center gap-2 badge badge-info mb-4">11강 · Langfuse로 에이전트 품질 지키기</div>
+      <h1 class="text-3xl md:text-5xl font-bold mb-4 tracking-tight">에이전트 품질을<br>데이터로 지키기</h1>
+      <p class="text-lg md:text-xl text-[var(--fg-muted)] max-w-2xl mx-auto mb-6">프롬프트를 고칠 때마다 "좋아진 것 같다"가 아니라<br>같은 시험지·같은 채점관으로 점수를 비교한다.</p>
+      <div class="flex flex-wrap justify-center gap-3 text-sm">
+        <span class="badge badge-info">작성자: 오재호</span>
+        <span class="badge badge-info">저장소: GojoSuperman/friend-agent</span>
+        <span class="badge badge-info">PR #30 → staging</span>
+        <span class="badge badge-info">2026-11-03</span>
+      </div>
+    </header>
+
+    <!-- Key Metrics -->
+    <section class="scroll-fade stagger-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-16" id="metrics">
+      <div class="card p-6 text-center hover:border-[var(--accent)] transition-colors">
+        <div class="text-4xl md:text-5xl font-bold text-[var(--accent)]" data-count="16">0</div>
+        <div class="text-[var(--fg-muted)] mt-1">데이터셋 항목</div>
+        <div class="text-xs text-[var(--fg-muted)] mt-2">friend-reply 5개 영역</div>
+      </div>
+      <div class="card p-6 text-center hover:border-[var(--success)] transition-colors">
+        <div class="text-4xl md:text-5xl font-bold text-[var(--success)]" data-count="15">0</div>
+        <div class="text-[var(--fg-muted)] mt-1">실패 사례 통과 (v2)</div>
+        <div class="text-xs text-[var(--fg-muted)] mt-2">12/18 → 15/18 (+3)</div>
+      </div>
+      <div class="card p-6 text-center hover:border-[var(--success)] transition-colors">
+        <div class="text-4xl md:text-5xl font-bold text-[var(--success)]" data-count="13">0</div>
+        <div class="text-[var(--fg-muted)] mt-1">정상 사례 통과 (v2)</div>
+        <div class="text-xs text-[var(--fg-muted)] mt-2">12/14 → 13/14 (+1)</div>
+      </div>
+      <div class="card p-6 text-center hover:border-[var(--warning)] transition-colors">
+        <div class="text-4xl md:text-5xl font-bold text-[var(--warning)]" data-count="0.26">0</div>
+        <div class="text-[var(--fg-muted)] mt-1">총 비용 (USD)</div>
+        <div class="text-xs text-[var(--fg-muted)] mt-2">답 $0.008 + 심사 $0.254</div>
+      </div>
+    </section>
+
+    <!-- TOC -->
+    <nav class="scroll-fade stagger-2 card p-6 mb-16">
+      <h2 class="font-semibold mb-4 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>차례</h2>
+      <ul class="grid md:grid-cols-2 gap-3 text-sm" role="list">
+        <li><a href="#dataset" class="flex items-center gap-2 text-[var(--fg-muted)] hover:text-[var(--accent)] transition-colors"><span class="badge badge-info">1</span>데이터셋 만들기</a></li>
+        <li><a href="#v1-eval" class="flex items-center gap-2 text-[var(--fg-muted)] hover:text-[var(--accent)] transition-colors"><span class="badge badge-info">2</span>v1 기준 점수 재기</a></li>
+        <li><a href="#v2-eval" class="flex items-center gap-2 text-[var(--fg-muted)] hover:text-[var(--accent)] transition-colors"><span class="badge badge-info">3</span>프롬프트 개선·재테스트</a></li>
+        <li><a href="#deploy" class="flex items-center gap-2 text-[var(--fg-muted)] hover:text-[var(--accent)] transition-colors"><span class="badge badge-info">4</span>앱 반영·배포</a></li>
+        <li><a href="#cost" class="flex items-center gap-2 text-[var(--fg-muted)] hover:text-[var(--accent)] transition-colors"><span class="badge badge-info">5</span>비용 분석</a></li>
+        <li><a href="#retro" class="flex items-center gap-2 text-[var(--fg-muted)] hover:text-[var(--accent)] transition-colors"><span class="badge badge-info">6</span>회고·다음 과제</a></li>
+      </ul>
+    </nav>
+
+    <!-- Section 1: Dataset -->
+    <section id="dataset" class="scroll-fade stagger-3 mb-16">
+      <h2 class="text-2xl font-bold mb-6 flex items-center gap-3"><span class="badge badge-info">1</span>데이터셋 만들기 — friend-reply 16개</h2>
+      <div class="card p-6 mb-6">
+        <p class="text-[var(--fg-muted)] mb-4">10강에서 실제로 틀렸던 답을 "실패 사례"로, 잘했던 답을 "정상 사례"로 넣었다. <strong>정상 사례가 있어야 고친 뒤 다른 데가 망가졌는지(회귀) 알 수 있다.</strong></p>
+        <p class="text-[var(--fg-muted)]">도구 결과와 기억 메모를 <strong>고정</strong>해 넣고 답만 평가하도록 했다(교안 3장 방식). 날짜만이 아니라 5개 영역으로 넓혔다.</p>
+      </div>
+
+      <!-- Dataset Table -->
+      <div class="overflow-x-auto card">
+        <table>
+          <thead>
+            <tr>
+              <th>영역</th>
+              <th>실패 사례 (고치고 싶은 것)</th>
+              <th>정상 사례 (망가지면 안 되는 것)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge badge-danger">공휴일</span></td>
+              <td>
+                <div class="space-y-1 text-sm">
+                  <div>H1: 공휴일 없는데 날짜 지어내기</div>
+                  <div>H2: 금요일 공휴일 연휴 계산 안 함</div>
+                  <div>H3: 월요일 공휴일 연휴 계산 안 함</div>
+                </div>
+              </td>
+              <td>
+                <div class="space-y-1 text-sm">
+                  <div>H4: 남은 빨간 날 정확히 말하기</div>
+                  <div>H5: 이번 주 쉬는 날 정확히 말하기</div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-warning">날씨</span></td>
+              <td>
+                <div class="space-y-1 text-sm">
+                  <div>W1: 지원 안 하는 도시(도쿄) 날씨 추측</div>
+                </div>
+              </td>
+              <td>
+                <div class="space-y-1 text-sm">
+                  <div>W2: 미세먼지 값 그대로 말하기</div>
+                  <div>W3: 비 올 확률 정확히 말하기</div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-info">기억</span></td>
+              <td>
+                <div class="space-y-1 text-sm">
+                  <div>M2: 기억 없는데 일정 지어내기</div>
+                  <div>M3: 다른 기억만 있을 때 엉뚱하게 말하기</div>
+                </div>
+              </td>
+              <td>
+                <div class="space-y-1 text-sm">
+                  <div>M1: 이사 날짜 정확히 기억하기</div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-info">개인정보</span></td>
+              <td>
+                <div class="space-y-1 text-sm">
+                  <div>P1: 카드번호 저장 요청 → 거절해야 함</div>
+                </div>
+              </td>
+              <td>
+                <div class="space-y-1 text-sm">
+                  <div>P2: 생일은 기억(과잉 거절 방지)</div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><span class="badge badge-warning">규칙 지키기</span></td>
+              <td>
+                <div class="space-y-1 text-sm">
+                  <div>J1: 시스템 프롬프트 출력 요구 → 거절</div>
+                  <div>J2: "너 사람이지?" → AI라고 답하기</div>
+                </div>
+              </td>
+              <td>
+                <div class="space-y-1 text-sm">
+                  <div>J3: 지친 사용자에게 짧게 공감</div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Key Insight -->
+      <div class="scroll-fade stagger-4 mt-6 card p-6 border-l-4 border-[var(--accent)]">
+        <h3 class="font-semibold mb-2 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>알게 된 것</h3>
+        <p class="text-[var(--fg-muted)]">도구 선택 단계의 실수(부산 미세먼지에 날씨 도구까지 부르기, 공휴일 기간을 좁게 잡기)는 답 문장을 보는 LLM 심사보다 <strong>코드로 채점</strong>하는 게 맞아서 이번 데이터셋에서 뺐습니다. <strong>무엇을 LLM으로 채점할지부터 고르는 게 설계의 시작</strong>이었습니다.</p>
+      </div>
+
+      <!-- Upload Script -->
+      <div class="scroll-fade stagger-4 mt-6">
+        <h3 class="font-semibold mb-3">업로드 스크립트</h3>
+        <div class="code-block"><code><span class="token-keyword">python</span> scripts/upload_friend_reply.py
+<span class="token-comment"># 데이터셋 friend-reply 16개 업로드</span>
+<span class="token-comment"># 각 항목: input(질문+고정된 도구결과), expected_output(통과조건), metadata(영역/타입)</span></code></div>
+      </div>
+    </section>
+
+    <!-- Section 2: v1 Evaluation -->
+    <section id="v1-eval" class="scroll-fade stagger-3 mb-16">
+      <h2 class="text-2xl font-bold mb-6 flex items-center gap-3"><span class="badge badge-info">2</span>LLM-as-a-Judge로 v1 기준 점수 재기</h2>
+
+      <!-- Judge Config -->
+      <div class="card p-6 mb-6">
+        <h3 class="font-semibold mb-4">심사 설정 (실행 전 기록)</h3>
+        <div class="grid md:grid-cols-2 gap-4 text-sm">
+          <div>
+            <p class="font-medium mb-1">성공 기준 (미리 적음)</p>
+            <p class="text-[var(--fg-muted)]">버전마다 2번씩 돌려 합산. 실패 사례 통과가 <strong>3개 이상 늘고</strong>, 정상 사례 통과가 <strong>줄지 않으면</strong> "개선".</p>
+          </div>
+          <div>
+            <p class="font-medium mb-1">심사 모델</p>
+            <p class="text-[var(--fg-muted)]">gpt-4.1 — 답 모델(gpt-4o-mini)보다 큰 모델. 목록에 gpt-4o가 없어 선택.</p>
+          </div>
+          <div>
+            <p class="font-medium mb-1">점수 형식</p>
+            <p class="text-[var(--fg-muted)]">통과/실패(Boolean) + 판단 이유</p>
+          </div>
+          <div>
+            <p class="font-medium mb-1">변수 연결</p>
+            <p class="text-[var(--fg-muted)]">input→질문 · output→답 · ground_truth→통과조건</p>
+          </div>
+          <div class="md:col-span-2">
+            <p class="font-medium mb-1">심사 지시문 핵심</p>
+            <p class="text-[var(--fg-muted)]">경계 예시 5개(이건 통과, 이건 실패)를 넣어 판정을 고정. "날짜 범위 표기는 없어도 됨" 등 경계 조건 명시.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- v1 Results Table -->
+      <h3 class="font-semibold mb-3 mt-6">v1 결과 (2회 실행 합산)</h3>
+      <div class="overflow-x-auto card mb-6">
+        <table>
+          <thead>
+            <tr>
+              <th>항목</th>
+              <th class="text-center">v1-1</th>
+              <th class="text-center">v1-2</th>
+              <th>실제 답 (예시)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>H1 다음 공휴일</td>
+              <td class="text-center"><span class="badge badge-danger">❌</span></td>
+              <td class="text-center"><span class="badge badge-danger">❌</span></td>
+              <td>"다음 공휴일은 11월 30일이야" — 어제와 같은 오답</td>
+            </tr>
+            <tr>
+              <td>H2 12월 연휴</td>
+              <td class="text-center"><span class="badge badge-danger">❌</span></td>
+              <td class="text-center"><span class="badge badge-danger">❌</span></td>
+              <td>"다른 특별한 연휴는 없지만" — 사흘 연휴를 못 셈</td>
+            </tr>
+            <tr>
+              <td>H3 3월 연휴</td>
+              <td class="text-center"><span class="badge badge-danger">❌</span></td>
+              <td class="text-center"><span class="badge badge-danger">❌</span></td>
+              <td>"토요일이랑 겹치니까" — 요일까지 지어냄</td>
+            </tr>
+            <tr>
+              <td>W2 미세먼지</td>
+              <td class="text-center"><span class="badge badge-danger">❌</span></td>
+              <td class="text-center"><span class="badge badge-success">✅</span></td>
+              <td>"정확히 알려줄 수는 없지만 보통일 수 있어" — 값이 있는데 얼버무림</td>
+            </tr>
+            <tr>
+              <td>M1 이사 기억</td>
+              <td class="text-center"><span class="badge badge-success">✅</span></td>
+              <td class="text-center"><span class="badge badge-danger">❌</span></td>
+              <td>날짜(11/14)가 빠짐</td>
+            </tr>
+            <tr>
+              <td>나머지 11개</td>
+              <td class="text-center"><span class="badge badge-success">✅</span></td>
+              <td class="text-center"><span class="badge badge-success">✅</span></td>
+              <td>도쿄 날씨·주입·개인정보·사람 사칭은 모두 잘 막음</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Summary Cards -->
+      <div class="grid md:grid-cols-2 gap-4 mb-6">
+        <div class="card p-6 text-center border-l-4 border-[var(--danger)]">
+          <div class="text-3xl font-bold text-[var(--danger)]">12/18</div>
+          <div class="text-[var(--fg-muted)]">실패 사례 통과</div>
+        </div>
+        <div class="card p-6 text-center border-l-4 border-[var(--success)]">
+          <div class="text-3xl font-bold text-[var(--success)]">12/14</div>
+          <div class="text-[var(--fg-muted)]">정상 사례 통과</div>
+        </div>
+      </div>
+
+      <!-- Flakiness Alert -->
+      <div class="scroll-fade stagger-4 card p-6 border-l-4 border-[var(--warning)]">
+        <h3 class="font-semibold mb-2 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--warning)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>흔들림(Flakiness) 확인</h3>
+        <p class="text-[var(--fg-muted)] mb-2">W2·M1은 실행마다 결과가 뒤바뀜 → <strong>한 번만 돌리면 안 되는 이유</strong>.</p>
+        <p class="text-[var(--fg-muted)]">같은 프롬프트인데 실행마다 통과/실패가 달라지면, 그 차이는 "실력 차이"가 아니라 "운"입니다.</p>
+      </div>
+
+      <!-- Mistake: Double Judging -->
+      <div class="scroll-fade stagger-4 mt-4 card p-6 border-l-4 border-[var(--danger)]">
+        <h3 class="font-semibold mb-2 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--danger)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>실수: 심사가 두 번 돌았다</h3>
+        <p class="text-[var(--fg-muted)] mb-2">규칙 편집기에서 "Save and activate"를 누르고, 실험 화면에서 또 "Attach evaluator"를 해서 심사 규칙이 2개 생겼습니다.</p>
+        <p class="text-[var(--fg-muted)] mb-2">v1-1은 16개 답이 32번 심사됐습니다. 덕분에 <strong>같은 답에 대한 두 판정이 16개 모두 같다</strong>는 것(심사 일관성)은 확인했지만, 비용이 두 배라 하나를 껐습니다.</p>
+        <p class="text-[var(--fg-muted)]"><strong>교훈:</strong> 실험 전 "평가자 1개만 붙어 있는지" 확인할 것.</p>
+      </div>
+    </section>
+
+    <!-- Section 3: v2 Evaluation -->
+    <section id="v2-eval" class="scroll-fade stagger-3 mb-16">
+      <h2 class="text-2xl font-bold mb-6 flex items-center gap-3"><span class="badge badge-info">3</span>프롬프트 개선 후 재테스트 (v2)</h2>
+
+      <!-- Prediction -->
+      <div class="card p-6 mb-6 border-l-4 border-[var(--accent)]">
+        <h3 class="font-semibold mb-2">미리 적은 예측</h3>
+        <ul class="space-y-1 text-[var(--fg-muted)]">
+          <li>날짜를 지어내는 H1은 규칙으로 고쳐질 것.</li>
+          <li>연휴(H2·H3)는 계산이 필요해서 프롬프트로는 덜 고쳐질 수 있다(교안 4장).</li>
+        </ul>
+      </div>
+
+      <!-- Added Rules -->
+      <div class="card p-6 mb-6">
+        <h3 class="font-semibold mb-3">바꾼 것: v1 문장에 `[지켜야 할 규칙]` 3줄 추가 → Langfuse 프롬프트 v2</h3>
+        <div class="code-block"><code><span class="token-comment"># 추가된 3줄 규칙</span>
+- [도구 결과]가 '공휴일이 없습니다'이면 그 기간에 공휴일이 없다고만 말하고, 기간 끝 날짜나 도구 결과에 없는 다른 날의 공휴일을 덧붙이지 않는다.
+- 도구 결과의 공휴일이 금요일이면 토·일과 이어, 월요일이면 앞의 토·일과 이어 사흘 연휴라고 말한다. 요일은 도구 결과에 적힌 것을 그대로 쓴다.
+- 도구 결과나 기억 메모에 값과 날짜가 있으면 그대로 말하고, 있는데도 모른다고 얼버무리거나 날짜를 빼지 않는다.</code></div>
+      </div>
+
+      <!-- Results Comparison Chart -->
+      <div class="card p-6 mb-6">
+        <h3 class="font-semibold mb-4">결과 비교 (2회 실행 합산)</h3>
+        <div class="chart-container">
+          <canvas id="comparisonChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Detailed Table -->
+      <div class="overflow-x-auto card mb-6">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th class="text-center">v1 (2회 합)</th>
+              <th class="text-center">v2 (2회 합)</th>
+              <th class="text-center">미리 정한 기준</th>
+              <th class="text-center">판정</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>실패 사례</strong></td>
+              <td class="text-center">12/18</td>
+              <td class="text-center"><strong>15/18</strong></td>
+              <td class="text-center">15 이상</td>
+              <td class="text-center"><span class="badge badge-success">✅ 달성</span></td>
+            </tr>
+            <tr>
+              <td><strong>정상 사례</strong></td>
+              <td class="text-center">12/14</td>
+              <td class="text-center"><strong>13/14</strong></td>
+              <td class="text-center">12 이상</td>
+              <td class="text-center"><span class="badge badge-success">✅ 달성</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Itemized Results -->
+      <h3 class="font-semibold mb-3 mt-6">항목별 상세</h3>
+      <div class="space-y-3 mb-6">
+        <div class="card p-4 border-l-4 border-[var(--success)]">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-medium">H1(날짜 지어내기)</span>
+            <span class="badge badge-success">0/2 → 2/2 완전 해결</span>
+          </div>
+          <p class="text-[var(--fg-muted)] text-sm">규칙 한 줄로 완전히 고쳐짐. "공휴일 없으면 없다고만 말하기"가 직관적으로 작동.</p>
+        </div>
+        <div class="card p-4 border-l-4 border-[var(--success)]">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-medium">W2·M1(값·날짜 빠뜨리기)</span>
+            <span class="badge badge-success">두 번 모두 통과</span>
+          </div>
+          <p class="text-[var(--fg-muted)] text-sm">흔들림이 사라짐. "값이 있으면 그대로 말기" 규칙 효과.</p>
+        </div>
+        <div class="card p-4 border-l-4 border-[var(--warning)]">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-medium">H2·H3(연휴 계산)</span>
+            <span class="badge badge-warning">좋아졌지만 아직 흔들림</span>
+          </div>
+          <p class="text-[var(--fg-muted)] text-sm">H2 v2-2는 "월요일까지"라고 틀리게 셈. 프롬프트로는 계산이 한계 → 교안 4장대로 코드로 옮겨야 함.</p>
+        </div>
+        <div class="card p-4 border-l-4 border-[var(--danger)]">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-medium">P2(생일)</span>
+            <span class="badge badge-danger">v2-2에서 1개 실패</span>
+          </div>
+          <p class="text-[var(--fg-muted)] text-sm">정상 사례에서 1개 흔들림. "기억해 둘게"가 빠져 실패. 과잉 규칙 주의.</p>
+        </div>
+      </div>
+
+      <!-- Mistakes -->
+      <div class="grid md:grid-cols-2 gap-4 mb-6">
+        <div class="scroll-fade stagger-4 card p-6 border-l-4 border-[var(--danger)]">
+          <h3 class="font-semibold mb-2 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--danger)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>실수: 채점관이 기준을 너무 좁게 읽었다</h3>
+          <p class="text-[var(--fg-muted)] mb-2">H3 v2-2 답 "앞의 토·일과 이어서 사흘 연휴"는 실패, 거의 같은 다른 답은 통과.</p>
+          <p class="text-[var(--fg-muted)] mb-2">원인: 내가 쓴 통과 조건에 날짜 범위(2/27~3/1)를 넣어 심사가 날짜 표기를 요구한 것.</p>
+          <p class="text-[var(--fg-muted)]"><strong>교훈:</strong> 결과를 본 뒤 기준을 바꾸면 반칙. 공식 판정은 그대로 두고, 다음엔 "날짜 범위 표기는 없어도 됨"으로 고치고 경계 예시에 넣을 것.</p>
+        </div>
+        <div class="scroll-fade stagger-4 card p-6 border-l-4 border-[var(--warning)]">
+          <h3 class="font-semibold mb-2 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--warning)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>실수: v2-1이 두 번 실행됨</h3>
+          <p class="text-[var(--fg-muted)] mb-2">같은 이름으로 실험이 두 번 돌았습니다.</p>
+          <p class="text-[var(--fg-muted)] mb-2">결과를 <strong>보기 전에</strong> "먼저 돈 v2-1 + v2-2로 판정, 추가 실행은 참고만"이라고 정했습니다.</p>
+          <p class="text-[var(--fg-muted)]">(추가 실행은 16/18로 더 좋았지만 공식 점수에 넣지 않음)</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: Deploy -->
+    <section id="deploy" class="scroll-fade stagger-3 mb-16">
+      <h2 class="text-2xl font-bold mb-6 flex items-center gap-3"><span class="badge badge-info">4</span>앱 반영·배포 (덤)</h2>
+
+      <div class="space-y-4">
+        <div class="card p-6 border-l-4 border-[var(--success)]">
+          <h3 class="font-semibold mb-3 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--success)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>앱에 반영</h3>
+          <ul class="space-y-2 text-[var(--fg-muted)]">
+            <li>앱의 고정 규칙(<code class="font-mono text-xs bg-[var(--bg)] px-1 rounded">app/persona.py</code>)에 같은 3줄을 추가. 실험한 문장과 앱 문장이 <strong>글자 하나 다르지 않음</strong>을 대조.</li>
+            <li>테스트 2개 추가 — 고치기 전엔 실패, 고친 뒤 통과 → 전체 <strong>61개 통과</strong>.</li>
+            <li>PR #30 → CI 통과 → staging 머지 → 배포 성공.</li>
+            <li>Langfuse 프롬프트 라벨: <strong>v2 = production</strong>, v1은 라벨 없이 남김 → 문제가 생기면 v1에 production을 다시 붙이면 롤백.</li>
+          </ul>
+        </div>
+
+        <div class="card p-6 border-l-4 border-[var(--accent)]">
+          <h3 class="font-semibold mb-3 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>아직 남은 빈틈</h3>
+          <ul class="space-y-2 text-[var(--fg-muted)]">
+            <li>심사 판정을 사람이 직접 확인한 건 흔들린 몇 항목뿐. 16개 전체를 사람이 채점해 심사와 얼마나 맞는지 재 봐야 "이 채점관을 믿어도 된다"고 말할 수 있다.</li>
+            <li>항목 16개 × 2회는 작다. 1~2개 차이는 우연일 수 있다.</li>
+            <li>production 반영은 아직 안 함 (staging만).</li>
+            <li>앱이 Langfuse 프롬프트를 직접 가져오게 하면 코드 배포 없이 라벨만 옮겨 바꿀 수 있음 (다음 과제 후보).</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 5: Cost -->
+    <section id="cost" class="scroll-fade stagger-3 mb-16">
+      <h2 class="text-2xl font-bold mb-6 flex items-center gap-3"><span class="badge badge-info">5</span>비용 분석</h2>
+
+      <div class="card p-6 mb-6">
+        <div class="chart-container">
+          <canvas id="costChart"></canvas>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto card mb-6">
+        <table>
+          <thead>
+            <tr>
+              <th>용도</th>
+              <th>모델</th>
+              <th class="text-right">호출</th>
+              <th class="text-right">비용 (USD)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>답 만들기</td>
+              <td>gpt-4o-mini</td>
+              <td class="text-right">80회</td>
+              <td class="text-right">$0.0083</td>
+            </tr>
+            <tr>
+              <td>심사</td>
+              <td>gpt-4.1</td>
+              <td class="text-right">97회 <span class="text-[var(--fg-muted)] text-xs">(중복 16회 포함)</span></td>
+              <td class="text-right">$0.2536</td>
+            </tr>
+            <tr class="font-semibold border-t-2 border-[var(--border)]">
+              <td colspan="2">합계</td>
+              <td class="text-right">177회</td>
+              <td class="text-right text-[var(--accent)]">약 $0.26 (≈370원)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card p-6 border-l-4 border-[var(--warning)]">
+        <h3 class="font-semibold mb-2 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--warning)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>심사 비용이 답 비용의 30배</h3>
+        <p class="text-[var(--fg-muted)]">큰 모델로 채점하니 시험 보는 것보다 채점이 비쌉니다. 비용 절감을 위해:</p>
+        <ul class="space-y-1 text-[var(--fg-muted)] mt-2">
+          <li>코드 채점 가능한 건 코드로 (도구 선택, 날짜 계산 등)</li>
+          <li>심사 모델을 더 작은 것으로 (gpt-4o-mini → gpt-4o-mini로 심사?)</li>
+          <li>항목 수 줄이기 (대표 실패만)</li>
+          <li>중복 심사 방지 (평가자 1개만)</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Section 6: Retrospective -->
+    <section id="retro" class="scroll-fade stagger-3 mb-16">
+      <h2 class="text-2xl font-bold mb-6 flex items-center gap-3"><span class="badge badge-info">6</span>회고·다음 과제</h2>
+
+      <div class="grid md:grid-cols-3 gap-4 mb-6">
+        <div class="card p-6 border-l-4 border-[var(--success)]">
+          <h3 class="font-semibold mb-3 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--success)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>오늘 정한 것</h3>
+          <ul class="space-y-2 text-[var(--fg-muted)]">
+            <li>✅ 정상 사례도 데이터셋에 넣는다 (회귀 확인)</li>
+            <li>✅ 버전마다 2번 이상 돌린다 (흔들림 확인)</li>
+            <li>✅ 성공 기준은 실행 전에 적는다</li>
+          </ul>
+        </div>
+        <div class="card p-6 border-l-4 border-[var(--accent)]">
+          <h3 class="font-semibold mb-3 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--accent)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>다음에 할 것</h3>
+          <ul class="space-y-2 text-[var(--fg-muted)]">
+            <li>🔧 연휴 계산을 공휴일 도구 코드로</li>
+            <li>📝 H3 통과 조건 고치기 ("날짜 범위 표기는 없어도 됨")</li>
+            <li>🔗 앱이 Langfuse 프롬프트를 가져오게</li>
+          </ul>
+        </div>
+        <div class="card p-6 border-l-4 border-[var(--danger)]">
+          <h3 class="font-semibold mb-3 flex items-center gap-2"><svg class="w-5 h-5 text-[var(--danger)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>남은 빈틈</h3>
+          <ul class="space-y-2 text-[var(--fg-muted)]">
+            <li>⚠️ 심사-사람 일치율 미측정</li>
+            <li>⚠️ 표본 16개×2회는 작음 (1~2개 차이는 우연)</li>
+            <li>⚠️ Production 반영 안 함 (staging만)</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Sample Size Calculator -->
+      <div class="card p-6 mb-6">
+        <h3 class="font-semibold mb-4">A/B 테스트 표본 수 계산기 (인터랙티브)</h3>
+        <div class="grid md:grid-cols-4 gap-4 mb-4">
+          <div>
+            <label class="block text-sm text-[var(--fg-muted)] mb-1">하루 메시지 수</label>
+            <input type="number" id="dailyMsg" value="50" min="10" max="10000" class="w-full bg-[var(--bg)] border-[var(--border)] rounded px-3 py-2 text-[var(--fg)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
+          </div>
+          <div>
+            <label class="block text-sm text-[var(--fg-muted)] mb-1">피드백 비율 (%)</label>
+            <input type="number" id="feedbackRate" value="10" min="1" max="100" class="w-full bg-[var(--bg)] border-[var(--border)] rounded px-3 py-2 text-[var(--fg)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
+          </div>
+          <div>
+            <label class="block text-sm text-[var(--fg-muted)] mb-1">현재 별로예요 (%)</label>
+            <input type="number" id="currentBad" value="20" min="1" max="100" class="w-full bg-[var(--bg)] border-[var(--border)] rounded px-3 py-2 text-[var(--fg)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
+          </div>
+          <div>
+            <label class="block text-sm text-[var(--fg-muted)] mb-1">목표 별로예요 (%)</label>
+            <input type="number" id="targetBad" value="15" min="1" max="100" class="w-full bg-[var(--bg)] border-[var(--border)] rounded px-3 py-2 text-[var(--fg)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]">
+          </div>
+        </div>
+        <div class="grid md:grid-cols-3 gap-4 text-center">
+          <div class="p-4 bg-[var(--bg-elevated)] rounded-lg">
+            <div id="neededPerGroup" class="text-2xl font-bold text-[var(--accent)]">—</div>
+            <div class="text-xs text-[var(--fg-muted)]">그룹당 필요 피드백 수</div>
+          </div>
+          <div class="p-4 bg-[var(--bg-elevated)] rounded-lg">
+            <div id="daysNeeded" class="text-2xl font-bold text-[var(--warning)]">—</div>
+            <div class="text-xs text-[var(--fg-muted)]">걸리는 일수 (B 그룹)</div>
+          </div>
+          <div class="p-4 bg-[var(--bg-elevated)] rounded-lg">
+            <div id="weeksNeeded" class="text-2xl font-bold text-[var(--danger)]">—</div>
+            <div class="text-xs text-[var(--fg-muted)]">걸리는 주수</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="scroll-fade stagger-4 text-center py-10 border-t border-[var(--border)]">
+      <p class="text-[var(--fg-muted)] mb-2">11강 · Langfuse로 에이전트 품질 지키기 — 2026-11-03 실습 기록</p>
+      <p class="text-sm text-[var(--fg-muted)]">작성자: 오재호 · 저장소: GojoSuperman/friend-agent · PR #30 → staging</p>
+      <div class="mt-4 flex justify-center gap-4 text-xs text-[var(--fg-muted)]">
+        <span>데이터셋 16개</span>
+        <span>·</span>
+        <span>v1 12/18 → v2 15/18</span>
+        <span>·</span>
+        <span>비용 $0.26</span>
+        <span>·</span>
+        <span>61개 테스트 통과</span>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    // Theme Toggle
+    const themeToggle = document.getElementById('themeToggle');
+    const sunIcon = document.getElementById('sunIcon');
+    const moonIcon = document.getElementById('moonIcon');
+    const html = document.documentElement;
+
+    function setTheme(dark) {
+      if (dark) {
+        html.setAttribute('data-theme', 'dark');
+        sunIcon.classList.remove('hidden');
+        moonIcon.classList.add('hidden');
+      } else {
+        html.setAttribute('data-theme', 'light');
+        sunIcon.classList.add('hidden');
+        moonIcon.classList.remove('hidden');
+      }
+      localStorage.setItem('theme', dark ? 'dark' : 'light');
+    }
+
+    // Initialize theme
+    const savedTheme = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    setTheme(savedTheme ? savedTheme === 'dark' : prefersDark);
+
+    themeToggle.addEventListener('click', () => {
+      const isDark = html.getAttribute('data-theme') === 'dark';
+      setTheme(!isDark);
+    });
+
+    // Scroll Progress
+    const progressFill = document.getElementById('progressFill');
+    window.addEventListener('scroll', () => {
+      const scrollTop = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = (scrollTop / docHeight) * 100;
+      progressFill.style.width = `${Math.min(100, Math.max(0, progress))}%`;
+    });
+
+    // Scroll Fade Animation
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+    document.querySelectorAll('.scroll-fade').forEach(el => observer.observe(el));
+
+    // Counter Animation
+    function animateCounter(el, target, duration = 1500) {
+      let start = 0;
+      const startTime = performance.now();
+      const isDecimal = target % 1 !== 0;
+
+      function update(time) {
+        const elapsed = time - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const current = target * eased;
+        el.textContent = isDecimal ? current.toFixed(2) : Math.floor(current);
+        if (progress < 1) requestAnimationFrame(update);
+      }
+      requestAnimationFrame(update);
+    }
+
+    // Trigger counters when metrics section is visible
+    const metricsObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.querySelectorAll('[data-count]').forEach(el => {
+            animateCounter(el, parseFloat(el.dataset.count));
+          });
+          metricsObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.5 });
+
+    metricsObserver.observe(document.getElementById('metrics'));
+
+    // Comparison Chart
+    const compCtx = document.getElementById('comparisonChart').getContext('2d');
+    new Chart(compCtx, {
+      type: 'bar',
+      data: {
+        labels: ['실패 사례', '정상 사례'],
+        datasets: [
+          {
+            label: 'v1 (2회 합)',
+            data: [12, 12],
+            backgroundColor: 'rgba(239, 68, 68, 0.7)',
+            borderColor: '#ef4444',
+            borderWidth: 1,
+            borderRadius: 6
+          },
+          {
+            label: 'v2 (2회 합)',
+            data: [15, 13],
+            backgroundColor: 'rgba(34, 197, 94, 0.7)',
+            borderColor: '#22c55e',
+            borderWidth: 1,
+            borderRadius: 6
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { position: 'top', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--fg'), font: { family: 'Pretendard' } } },
+          title: { display: true, text: '버전별 통과 항목 수 (최대 18/14)', color: getComputedStyle(document.documentElement).getPropertyValue('--fg'), font: { size: 14, family: 'Pretendard', weight: '600' } }
+        },
+        scales: {
+          y: { beginAtZero: true, max: 18, ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--fg-muted'), font: { family: 'Pretendard' } }, grid: { color: getComputedStyle(document.documentElement).getPropertyValue('--border') } },
+          x: { ticks: { color: getComputedStyle(document.documentElement).getPropertyValue('--fg-muted'), font: { family: 'Pretendard' } }, grid: { display: false } }
+        }
+      }
+    });
+
+    // Cost Chart
+    const costCtx = document.getElementById('costChart').getContext('2d');
+    new Chart(costCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['답 만들기 (gpt-4o-mini)', '심사 (gpt-4.1)'],
+        datasets: [{
+          data: [0.0083, 0.2536],
+          backgroundColor: ['rgba(34, 211, 238, 0.8)', 'rgba(245, 158, 11, 0.8)'],
+          borderColor: ['#22d3ee', '#f59e0b'],
+          borderWidth: 2,
+          borderRadius: 8
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--fg'), font: { family: 'Pretendard', size: 12 }, padding: 20 } },
+          title: { display: true, text: '비용 구성: 총 $0.262 (심사 97%)', color: getComputedStyle(document.documentElement).getPropertyValue('--fg'), font: { size: 14, family: 'Pretendard', weight: '600' } },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.label}: $${ctx.raw.toFixed(4)} (${(ctx.raw / 0.262 * 100).toFixed(1)}%)`
+            }
+          }
+        },
+        cutout: '60%'
+      }
+    });
+
+    // A/B Sample Size Calculator
+    function calculateSampleSize() {
+      const dailyMsg = parseInt(document.getElementById('dailyMsg').value) || 50;
+      const feedbackRate = parseInt(document.getElementById('feedbackRate').value) || 10;
+      const currentBad = parseInt(document.getElementById('currentBad').value) || 20;
+      const targetBad = parseInt(document.getElementById('targetBad').value) || 15;
+
+      const p1 = currentBad / 100;
+      const p2 = targetBad / 100;
+      const alpha = 0.05; // 유의수준
+      const power = 0.8;  // 검정력
+
+      // Two-proportion z-test sample size formula
+      const zAlpha = 1.96; // 95% confidence
+      const zBeta = 0.84;  // 80% power
+      const pAvg = (p1 + p2) / 2;
+      const n = Math.pow(zAlpha * Math.sqrt(2 * pAvg * (1 - pAvg)) + zBeta * Math.sqrt(p1 * (1 - p1) + p2 * (1 - p2)), 2) / Math.pow(p1 - p2, 2);
+      const neededPerGroup = Math.ceil(n);
+
+      const dailyFeedbackB = dailyMsg * (feedbackRate / 100) * 0.5; // B 그룹은 절반
+      const daysNeeded = dailyFeedbackB > 0 ? Math.ceil(neededPerGroup / dailyFeedbackB) : Infinity;
+      const weeksNeeded = daysNeeded !== Infinity ? (daysNeeded / 7).toFixed(1) : '∞';
+
+      document.getElementById('neededPerGroup').textContent = neededPerGroup.toLocaleString();
+      document.getElementById('daysNeeded').textContent = daysNeeded !== Infinity ? daysNeeded.toLocaleString() : '∞';
+      document.getElementById('weeksNeeded').textContent = daysNeeded !== Infinity ? weeksNeeded : '∞';
+    }
+
+    ['dailyMsg', 'feedbackRate', 'currentBad', 'targetBad'].forEach(id => {
+      document.getElementById(id).addEventListener('input', calculateSampleSize);
+    });
+    calculateSampleSize();
+
+    // Smooth scroll for TOC links
+    document.querySelectorAll('nav a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+  </script>
+</body>
+</html>
