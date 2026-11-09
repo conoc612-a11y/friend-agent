@@ -157,11 +157,52 @@ def get_holidays(args, ctx):
     found = []
     for year in range(start.year, end.year + 1):
         found += [(d, n) for d, n in holidays_of(year) if start <= d <= end]
-    data = {"from": start.isoformat(), "to": end.isoformat(),
-            "holidays": [{"date": d.isoformat(), "name": n} for d, n in found]}
+    
+    # 주말 연결 정보 추가
+    holidays_with_weekend = []
+    for d, n in found:
+        weekday = d.weekday()  # 0=월, 4=금, 5=토, 6=일
+        is_fri_mon = weekday in (4, 0)  # 금요일 또는 월요일
+        weekend_info = ""
+        if weekday == 4:  # 금요일
+            weekend_info = " (금~일 사흘 연휴)"
+        elif weekday == 0:  # 월요일
+            weekend_info = " (토~월 사흘 연휴)"
+        holidays_with_weekend.append({
+            "date": d.isoformat(), 
+            "name": n,
+            "weekday": when.WEEKDAYS[weekday],
+            "is_long_weekend": is_fri_mon,
+            "weekend_info": weekend_info
+        })
+    
+    # 기간 내 공휴일이 없으면 그 뒤의 첫 공휴일도 찾기
+    next_holiday = None
     if not found:
-        return ToolResult("get_holidays", True, f"{start}부터 {end}까지 공휴일이 없습니다.", data)
-    listed = ", ".join(f"{when.date_label(d)} {n}" for d, n in found[:6])
+        # 앞으로 1년 더 검색
+        for year in range(end.year, end.year + 2):
+            for d, n in holidays_of(year):
+                if d > end:
+                    next_holiday = {"date": d.isoformat(), "name": n, "weekday": when.WEEKDAYS[d.weekday()]}
+                    break
+            if next_holiday:
+                break
+    
+    data = {
+        "from": start.isoformat(), 
+        "to": end.isoformat(),
+        "holidays": [{"date": d.isoformat(), "name": n} for d, n in found],
+        "holidays_detail": holidays_with_weekend,
+        "next_holiday": next_holiday
+    }
+    
+    if not found:
+        msg = f"{start}부터 {end}까지 공휴일이 없습니다."
+        if next_holiday:
+            msg += f" 다음 공휴일은 {when.date_label(date.fromisoformat(next_holiday['date']))} {next_holiday['name']}입니다."
+        return ToolResult("get_holidays", True, msg, data)
+    
+    listed = ", ".join(f"{when.date_label(d)} {n}{h.get('weekend_info', '')}" for d, n, h in zip([x[0] for x in found], [x[1] for x in found], holidays_with_weekend[:6]))
     more = f" 외 {len(found) - 6}일" if len(found) > 6 else ""
     return ToolResult("get_holidays", True, f"{start}~{end} 공휴일: {listed}{more}.", data)
 
@@ -173,9 +214,22 @@ def create_reminder(args, ctx):
     text = str(args.get("text") or "").strip()[:100]
     if not text:
         return ToolResult("create_reminder", False, "무엇을 알려 줄지 몰라 약속을 저장하지 않았습니다.")
-    due, error = when.check_due(args.get("due_at"), now)
-    if error:
-        return ToolResult("create_reminder", False, f"약속을 저장하지 않았습니다: {error}")
+    
+    # 모델이 준 due_at을 먼저 시도
+    due_at = args.get("due_at")
+    due, error = None, None
+    
+    if due_at:
+        due, error = when.check_due(due_at, now)
+    
+    # due_at이 없거나 파싱 실패 시, 메시지에서 상대적 날짜 표현 파싱 시도
+    if due is None:
+        # 모델이 text에 날짜 표현을 넣었을 수 있음 (예: "금요일 전날 밤에 일찍 자기")
+        # router에서 text와 due_at을 분리해주므로, 여기서는 due_at이 없으면 에러
+        if error:
+            return ToolResult("create_reminder", False, f"약속을 저장하지 않았습니다: {error}")
+        return ToolResult("create_reminder", False, "시각을 지정해 주세요.")
+    
     reminder = ctx.store.add_reminder(ctx.user_id, text, due)
     local = due.astimezone(now.tzinfo)
     return ToolResult("create_reminder", True, f"약속을 저장했습니다: {when.label(local)}에 '{text}'.",

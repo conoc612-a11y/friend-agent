@@ -51,7 +51,34 @@ def day_offset(text, now):
 
 
 def parse_when(text, now):
-    """'내일 아침', '목요일 저녁 7시', '30분 뒤' 같은 표현을 시각으로 바꾼다. 못 읽으면 None."""
+    """'내일 아침', '목요일 저녁 7시', '30분 뒤', '금요일 전날 밤' 같은 표현을 시각으로 바꾼다. 못 읽으면 None."""
+    # 상대적 표현(전날, 이틀 전 등) 먼저 확인
+    relative_result = parse_relative_date(text, now)
+    if relative_result[0] is not None:
+        base_date, days_offset = relative_result
+        # 시간 부분 추출
+        time_part = None
+        for p in PARTS:
+            if p in text:
+                time_part = p
+                break
+        hm = re.search(r"(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분|\s*(반))?", text)
+        if hm:
+            hour = int(hm.group(1))
+            minute = int(hm.group(2) or (30 if hm.group(3) else 0))
+            if time_part in ("오후", "저녁", "밤") and hour < 12:
+                hour += 12
+            elif time_part is None and 1 <= hour <= 7:
+                hour += 12
+            due = datetime.combine(base_date, datetime.min.time()).replace(hour=hour, minute=minute, second=0, microsecond=0)
+            due += timedelta(days=days_offset)
+            return due.replace(tzinfo=now.tzinfo)
+        else:
+            hour = PARTS.get(time_part, 21)
+            due = datetime.combine(base_date, datetime.min.time()).replace(hour=hour, minute=0, second=0, microsecond=0)
+            due += timedelta(days=days_offset)
+            return due.replace(tzinfo=now.tzinfo)
+    
     m = re.search(r"(\d+)\s*(분|시간)\s*(뒤|후|있다가)", text)
     if m:
         n = int(m.group(1))
@@ -103,3 +130,58 @@ def check_due(value, now):
     if due > now + timedelta(days=365):
         return None, "1년보다 먼 약속은 저장하지 않습니다."
     return due, None
+
+
+def parse_relative_date(text, now):
+    """'금요일 전날', '크리스마스 이틀 전', '출발 하루 뒤' 같은 표현을 기준일로부터 계산한다.
+    
+    Returns: (base_date, days_offset) or (None, None)
+    - base_date: 기준이 되는 날짜 (date 객체)
+    - days_offset: 기준일로부터 며칠 차이 (음수=전, 양수=후)
+    """
+    import re
+    from datetime import date
+    
+    # 요일 찾기
+    m = re.search(r"(다음\s*주\s*)?([월화수목금토일])요일", text)
+    if m:
+        target_weekday = WEEKDAYS.index(m.group(2))
+        if m.group(1):  # 다음 주 X요일
+            base = now.date() + timedelta(days=(7 - now.weekday()) + target_weekday)
+        else:
+            base = now.date() + timedelta(days=(target_weekday - now.weekday()) % 7)
+    else:
+        # 특정 날짜 표현 찾기 (예: 크리스마스, 설날 등)
+        # 여기서는 요일만 처리하고, 공휴일명은 get_holidays에서 처리
+        return None, None
+    
+    # 전/후 표현 찾기
+    days_offset = 0
+    if "전날" in text or "하루 전" in text:
+        days_offset = -1
+    elif "이틀 전" in text or "이틀전" in text:
+        days_offset = -2
+    elif "사흘 전" in text or "삼일 전" in text:
+        days_offset = -3
+    elif "하루 뒤" in text or "하루 후" in text or "다음 날" in text:
+        days_offset = 1
+    elif "이틀 뒤" in text or "이틀 후" in text:
+        days_offset = 2
+    elif "사흘 뒤" in text:
+        days_offset = 3
+    
+    return base, days_offset
+
+
+def compute_due_from_relative(base_date, days_offset, time_part=None):
+    """기준일과 오프셋으로 due_at 계산."""
+    from datetime import datetime, timedelta
+    
+    if time_part is None:
+        time_part = "밤"  # 기본값
+    
+    hour = PARTS.get(time_part, 21)
+    due = datetime.combine(base_date, datetime.min.time()).replace(hour=hour, minute=0)
+    due += timedelta(days=days_offset)
+    
+    return due

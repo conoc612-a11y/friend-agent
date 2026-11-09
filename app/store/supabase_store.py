@@ -134,5 +134,33 @@ class SupabaseStore:
         return [self._reminder(r) for r in rows]
 
     def delete_all(self, uid):
+        # credit_ledger 는 지우지 않는다 — 지우고 다시 오는 것만으로 가입 크레딧을 또 받지 못하게
         for table in ("messages", "summaries", "memories", "reminders", "characters", "user_settings"):
             self._delete(table, user_id=f"eq.{uid}")
+
+    def get_balance(self, uid):
+        rows = self._get("credit_ledger", user_id=f"eq.{uid}", select="SUM(change) as total")
+        total = rows[0]["total"] if rows and rows[0]["total"] is not None else 0
+        return total
+
+    def deduct_credit(self, uid, amount, reason, reference):
+        self._insert("credit_ledger", {"user_id": uid, "change": -amount, "reason": reason, "reference": reference})
+
+    def add_credit(self, uid, amount, reason, reference):
+        try:
+            self._insert("credit_ledger", {"user_id": uid, "change": amount, "reason": reason, "reference": reference})
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code != 409:
+                raise  # 같은 참조가 이미 있으면(유니크 인덱스) 넘어간다 — 한 번만 쌓는 게 목적
+
+    def grant_signup(self, uid, amount):
+        """가입 크레딧. ref signup:<uid> 가 이미 있으면 아무 것도 하지 않는다."""
+        ref = f"signup:{uid}"
+        if self._get("credit_ledger", user_id=f"eq.{uid}", reference=f"eq.{ref}", limit=1):
+            return
+        self.add_credit(uid, amount, "가입 크레딧", ref)
+
+    def recent_credits(self, uid, limit=10):
+        rows = self._get("credit_ledger", user_id=f"eq.{uid}", order="created_at.desc", limit=limit)
+        return [{"delta": r["change"], "reason": r["reason"], "ref": r["reference"],
+                 "created_at": parse_time(r["created_at"])} for r in reversed(rows)]
