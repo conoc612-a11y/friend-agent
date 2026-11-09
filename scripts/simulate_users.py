@@ -117,16 +117,67 @@ PERSONAS = {
 }
 
 
+# 배포 뒤 확인용(데이터셋과 같은 문제를 다른 표현으로 물어본다).
+PERSONAS_AFTER = {
+    "planner": {
+        "character": PERSONAS["planner"]["character"],
+        "turns": [
+            "설날이랑 신정 중에 더 빨리 오는 게 언제야?",
+            "다음 달에 쉬는 날 있어? 여행 계획 짜려고",
+            "주말에 미세먼지가 나쁘면 집에 있을까. 주말 미세먼지 어때?",
+            "글요일에 세미나가 있어. 그 하루 전에 미리 복습하자고 약속 저장해 줘",
+            "지난주에 공휴일 있었어? 쉬었는지 기억이 안 나",
+            "작년 설날이 언제였는지 기억나? 올해랑 같은 날이야?",
+            "내일 비 온다며? 진짜야? 우산 챙겨야 하나",
+            "요즘 미세먼지가 심하다고 하던데 요즘 공기가 어떤 것 같아?",
+            "목요일 밤에 같이 저녁 먹자. 저녁 7시로 저장해 줘",
+            "저녁 약속 취소할게. 회식이 생겼어",
+            "월요일 아침에 일찍 일어나라고 알려 줘",
+            "주말에 뭐 했어? 나는 집에서 쉬었어",
+            "다음 공휴일에 부모님 모시고 갈 만한 곳 추천해 줘",
+            "오늘 너무 피곤하다. 그냥 자고 싶어",
+            "내일 일정 뭐 있었지? 까먹을 것 같아서",
+        ],
+    },
+    "weather": {
+        "character": PERSONAS["weather"]["character"],
+        "turns": [
+            "이번 주말에 등산 가려는데 날씨 괜찮을까요? 다음 주 토요일이요",
+            "다가오는 공휴일이 언제쯤인가요? 쉬는 날에 다녀오고 싶어서요",
+            "주말에 미세먼지 심한 편이에요? 마스크 챙길지 정해야 해서요",
+            "다음 달에 공휴일 며칠 있어요? 연휴면 여행 가려고요",
+            "저녁에 산책하려고 하는데 기온이 어떨까요?",
+            "크리스마스에 날씨가 어떨까요? 미리 알 수 있나요?",
+            "요즘 공기가 안 좋다던데 사실인가요? 미세먼지 심한가요?",
+            "주말에 비 온다고 하던데 정말인가요?",
+            "내일 출근길에 비가 올까요? 우산 챙겨야 할지 모르겠어요",
+            "토요일 아침 8시에 기상 알림 등록해 주세요",
+            "기상 알림 취소할게요. 그냥 늦잠 잘래요",
+            "미세먼지 나쁜 날엔 뭐 하면 좋을까요?",
+            "겨울에 단풍 볼 수 있는 곳이 있을까요?",
+            "오늘 하루도 수고 많으셨어요. 내일 날씨만 알려 주시면 됩니다",
+            "약속 하나 확인하고 싶어요. 목록 보여 주실래요?",
+        ],
+    },
+}
+
+
 def anon_login(base, http):
     """/api/config 의 공개 정보로 익명 로그인해 (token, user_id) 를 돌려준다."""
     cfg = http.get(f"{base}/api/config").json()
     url, key = cfg["supabase_url"], cfg["supabase_publishable_key"]
-    r = http.post(f"{url}/auth/v1/signup", headers={"apikey": key, "Authorization": f"Bearer {key}"},
-                  json={}, timeout=20)
-    r.raise_for_status()
-    data = r.json()
-    token, uid = data["access_token"], data["user"]["id"]
-    return token, uid
+    for attempt in range(6):
+        r = http.post(f"{url}/auth/v1/signup", headers={"apikey": key, "Authorization": f"Bearer {key}"},
+                      json={}, timeout=20)
+        if r.status_code == 429:
+            wait = 60 * (attempt + 1)  # 익명 가입 속도 제한 — 길게 기다렸다 다시
+            print(f"    가입 속도 제한, {wait}초 대기…")
+            time.sleep(wait)
+            continue
+        r.raise_for_status()
+        data = r.json()
+        return data["access_token"], data["user"]["id"]
+    raise RuntimeError("익명 가입 속도 제한(429)이 계속됩니다")
 
 
 def api(base, http, token, path, method="GET", body=None):
@@ -195,6 +246,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", required=True)
     parser.add_argument("--personas", default="planner,weather,friend")
+    parser.add_argument("--set", default="before", choices=["before", "after"],
+                        help="before=데이터셋 만들기 전 대화, after=데이터셋과 다른 표현의 확인용 대화")
     parser.add_argument("--turns", type=int, default=22, help="페르소나당 보낼 턴 수(0=전부)")
     parser.add_argument("--out", default=".analysis/sim")
     parser.add_argument("--seed", type=int, default=7)
@@ -206,11 +259,13 @@ def main():
     http = httpx.Client()
     kst = timezone(timedelta(hours=9))
     today = datetime.now(kst).strftime("%Y-%m-%d")
+    pool = PERSONAS if args.set == "before" else PERSONAS_AFTER
 
     for name in args.personas.split(","):
-        spec = PERSONAS[name.strip()]
+        spec = pool[name.strip()]
         turns = spec["turns"] if args.turns in (0, None) else spec["turns"][: args.turns]
         token, uid = anon_login(args.base, http)
+        api(args.base, http, token, "/api/me")  # 가입 크레딧 지급
         api(args.base, http, token, "/api/character", "PUT", spec["character"])
         api(args.base, http, token, "/api/greeting", "POST")
         print(f"[{name}] 사용자 {uid[:8]}… 대화 {len(turns)}턴 시작")
