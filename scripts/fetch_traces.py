@@ -41,6 +41,7 @@ def fetch_observations(lf, days):
             from_start_time=start,
             to_start_time=end,
             fields="core,basic,io,usage,trace_context",
+            expand_metadata="true",
             limit=1000,
             cursor=cursor,
         )
@@ -95,6 +96,7 @@ def obs_row(o):
         "environment": getattr(o, "environment", None),
         "trace_release": getattr(o, "release", None),
         "trace_version": getattr(o, "trace_version", None),
+        "obs_version": getattr(o, "version", None),
     }
 
 
@@ -144,6 +146,7 @@ def main():
             t["input"] = r["input"]
             t["output"] = r["output"]
             t["root_metadata"] = r["metadata"]
+            t["version"] = r["obs_version"] or t["version"]
             if r["trace_tags"]:
                 t["tags"] = r["trace_tags"]
         t["observations"].append(r)

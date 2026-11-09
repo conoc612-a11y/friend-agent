@@ -25,7 +25,7 @@ from app.tracing import turn_attributes, greet_attributes
 GREETING_GAP = timedelta(hours=6)  # 마지막 대화 뒤 이만큼 지나면 앱을 열 때 먼저 말을 건다
 
 
-def system_prompt(character, now, location, memories, summary, tool_lines=(), clarify=False):
+def system_prompt(character, now, location, memories, summary, tool_lines=(), clarify=False, tools_ok=None):
     parts = [build_persona(character),
              f"[지금] {when.label(now)} ({now.tzinfo}), 사용자 지역: {location}\n[달력]\n{when.calendar_hint(now)}"]
     block = memory.memory_block(memories, summary)
@@ -33,6 +33,9 @@ def system_prompt(character, now, location, memories, summary, tool_lines=(), cl
         parts.append(block)
     if tool_lines:
         parts.append("[도구 결과]\n" + "\n".join(f"- {line}" for line in tool_lines))
+    if tools_ok is False:
+        # 도구를 안 골랐거나 도구가 실패한 턴. 답이 날짜·사실을 지어내는 것을 막는다(트레이스에서 확인된 문제).
+        parts.append("[근거 없는 사실 금지]\n이번 턴에는 성공한 도구 결과가 없다. 날짜, 공휴일, 날씨, 미세먼지 수치를 답에서 단정하지 않는다. 그런 정보가 꼭 필요하면 지금은 확인할 수 없다고 말하고, 다시 확인하자고 한다.")
     if clarify:
         parts.append("[되묻기]\n사용자가 무엇을 원하는지 확실하지 않다. 짧게 되물어서 확인한다.")
     return "\n\n".join(parts)
@@ -104,7 +107,8 @@ def run_turn(message, uid, llm, store, show_panel):
 
     # ④ 답 생성
     system = system_prompt(character, now, settings["location"], memories, summary,
-                           [r.summary for r in results], clarify=choice.action == "clarify")
+                           [r.summary for r in results], clarify=choice.action == "clarify",
+                           tools_ok=any(r.ok for r in results) if results else False)
     if show_panel:
         yield {"type": "context", "memories": [m["text"] for m in memories],
                "summary": summary["text"] if summary else None, "recent_messages": len(history)}
