@@ -149,20 +149,28 @@ def main():
             t["version"] = r["obs_version"] or t["version"]
             if r["trace_tags"]:
                 t["tags"] = r["trace_tags"]
+        # 버전(COMMIT_SHA)은 run-turn 같은 최상위 span 행에 붙어 온다. 뿌리가 없는 그룹도 잡는다.
+        if r["name"] == "run-turn" and r["obs_version"]:
+            t["version"] = r["obs_version"]
         t["observations"].append(r)
 
-    score_rows = [
-        {
+    score_rows = []
+    for s in scores:
+        subject = s.subject
+        tid = None
+        if isinstance(subject, dict):
+            tid = subject.get("id")
+        elif subject is not None:
+            tid = getattr(subject, "id", None)
+        score_rows.append({
             "id": s.id,
-            "trace_id": s.subject.get("id") if isinstance(getattr(s, "subject", None), dict) else None,
+            "trace_id": tid,
             "name": s.name,
             "value": s.value,
             "data_type": getattr(s, "data_type", None),
             "comment": (s.comment or "")[:200],
             "ts": s.created_at.isoformat() if getattr(s, "created_at", None) else None,
-        }
-        for s in scores
-    ]
+        })
 
     # 관측을 시작 시간순으로
     for t in by_trace.values():
