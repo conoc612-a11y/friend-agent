@@ -7,3 +7,5 @@ tzdata>=2024.1
 python-multipart>=0.0.9
 pytesseract>=0.3.10
 pillow>=10.4
+faster-whisper>=1.0
+langfuse>=5.1

@@ -25,7 +25,7 @@ class MemoryStore:
     def _user(self, uid):
         return self.users.setdefault(uid, {
             "character": None, "settings": dict(DEFAULT_SETTINGS), "messages": [],
-            "summary": None, "memories": [], "reminders": []})
+            "summary": None, "memories": [], "reminders": [], "balance": 0})
 
     # 캐릭터와 사용자 설정
     def get_character(self, uid):
@@ -109,4 +109,33 @@ class MemoryStore:
         return claimed
 
     def delete_all(self, uid):
-        self.users.pop(uid, None)
+        u = self._user(uid)
+        u["character"] = None
+        u["settings"] = dict(DEFAULT_SETTINGS)
+        u["messages"] = []
+        u["summary"] = None
+        u["memories"] = []
+        u["reminders"] = []
+        # credits(원장)와 balance 는 남긴다 — 지우고 다시 오는 것만으로 가입 크레딧을 또 받지 못하게
+
+    def get_balance(self, uid):
+        return self._user(uid).get("balance", 0)
+
+    def deduct_credit(self, uid, amount, reason, reference):
+        u = self._user(uid)
+        u["balance"] -= amount
+        u.setdefault("credits", []).append({"delta": -amount, "reason": reason, "ref": reference})
+
+    def add_credit(self, uid, amount, reason, reference):
+        u = self._user(uid)
+        if reference and any(c["ref"] == reference for c in u.get("credits", [])):
+            return  # 같은 참조는 한 번만 (Supabase 유니크 인덱스와 같은 규칙)
+        u["balance"] += amount
+        u.setdefault("credits", []).append({"delta": amount, "reason": reason, "ref": reference})
+
+    def grant_signup(self, uid, amount):
+        """가입 크레딧. ref signup:<uid> 가 이미 있으면 아무 것도 하지 않는다."""
+        self.add_credit(uid, amount, "가입 크레딧", f"signup:{uid}")
+
+    def recent_credits(self, uid, limit=10):
+        return self.users.get(uid, {}).get("credits", [])[-limit:]

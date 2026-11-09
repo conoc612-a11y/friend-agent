@@ -9,6 +9,7 @@ client = TestClient(app)
 
 
 def chat(message):
+    client.get("/api/me")  # 가입 크레딧 30개 지급(한 번만) — 없으면 첫 메시지가 402로 거절된다
     r = client.post("/api/chat", json={"message": message})
     assert r.status_code == 200
     return [json.loads(line) for line in r.text.splitlines()]
@@ -45,6 +46,9 @@ def test_due_reminder_is_delivered_only_once():
     assert "테스트 약속" not in [r["text"] for r in second]
 
 
-def test_ocr_is_off_by_default():
+def test_ocr_is_off_by_default(monkeypatch):
+    # .env 에 OCR_ENABLED=true 가 있어도, 꺼져 있을 때의 동작(404)을 확인한다
+    from app import main
+    monkeypatch.setattr(main.settings, "ocr_enabled", False)
     r = client.post("/api/ocr", files={"photo": ("a.png", b"x", "image/png")})
     assert r.status_code == 404
