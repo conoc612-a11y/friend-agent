@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def load_env_file():
-    """키 값을 출력하지 않고 프로세스 환경에만 넣는다."""
+    """키 값을 출력하지 않고 프로세스 환경에 넣는다. 셸에 남은 옛 키보다 .env 를 우선한다."""
     env_path = Path(__file__).resolve().parent.parent / ".env"
     if not env_path.exists():
         return
@@ -28,7 +28,11 @@ def load_env_file():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, _, value = line.partition("=")
-            os.environ.setdefault(key.strip(), value.strip())
+            key, value = key.strip(), value.strip()
+            if value:  # 값이 있는 항목은 .env 를 우선(옛 환경변수 무시)
+                os.environ[key] = value
+            else:
+                os.environ.setdefault(key, value)
 
 
 def fetch_observations(lf, days):
