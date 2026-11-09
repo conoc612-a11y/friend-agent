@@ -139,9 +139,9 @@ class SupabaseStore:
             self._delete(table, user_id=f"eq.{uid}")
 
     def get_balance(self, uid):
-        rows = self._get("credit_ledger", user_id=f"eq.{uid}", select="SUM(change) as total")
-        total = rows[0]["total"] if rows and rows[0]["total"] is not None else 0
-        return total
+        # PostgREST 는 SQL 스타일 별칭(SUM(x) as total)을 받지 않아 400 이 나므로, 행을 받아 합친다
+        rows = self._get("credit_ledger", user_id=f"eq.{uid}", select="change")
+        return sum(r["change"] for r in rows)
 
     def deduct_credit(self, uid, amount, reason, reference):
         self._insert("credit_ledger", {"user_id": uid, "change": -amount, "reason": reason, "reference": reference})
